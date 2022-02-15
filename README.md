@@ -1,7 +1,6 @@
 # Chen-et-al-2022b
 Herd economics and herd lactation curve characteristics
 
-For Livestock Science 2022
 
 ## Codes (R)
 
