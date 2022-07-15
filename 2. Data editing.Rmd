@@ -1,0 +1,124 @@
+---
+title: "DataEditing0425"
+author: "Y.C"
+date: "04/25/2022"
+output: html_document
+---
+
+# Install packages
+```{r packages}
+library(data.table)
+library(dplyr)
+```
+
+
+
+# Read in data
+```{r}
+load("CalculatedData.rda")
+CalculatedData <- CalculatedData %>%
+  filter(FiscalYear!=2007,
+         FiscalYear!=2016)
+```
+
+
+
+
+# Descriptive analysis
+
+## how many herds and records    
+
+1887	12849	
+```{r}
+CalculatedData %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+```
+
+
+```{r}
+CalculatedData$IncomeOverFeedCostPer100Kg <- 100*(CalculatedData$TotalRevenues-CalculatedData$TotalFeedCosts)/CalculatedData$TotalMilkForFactoryKg
+#summary(CalculatedData)
+#colnames(CalculatedData)
+```
+
+```{r}
+CalculatedData<-CalculatedData %>%
+  group_by(UBN)%>%
+  mutate(OrganicNumber=n_distinct(Organic),
+         ProduceOwnProductNumber=n_distinct(ProduceOwnProduct),
+         ProductTypeNumber=n_distinct(ProductType),
+         YearDifferenceB=abs(LastyearInFlynth-as.numeric(FiscalYear)),
+         YearDifferenceA=abs(NextyearInFlynth-as.numeric(FiscalYear))) %>%
+  ungroup()
+
+# consecutive year
+Noconsecutive<-CalculatedData%>% 
+  filter(YearDifferenceA==1 | YearDifferenceB==1)
+
+Noconsecutive %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+#1840	12665	
+```
+
+```{r}
+Noconsecutive<-Noconsecutive %>%
+  filter(ProduceOwnProduct!='ZUIVELAAR',
+                            Organic!='BIO')
+Noconsecutive %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+#1817	12512	
+```
+
+```{r}
+Noconsecutive<-Noconsecutive %>%
+  filter(FlynthNumberOfMilkingCow>quantile(FlynthNumberOfMilkingCow,0.01))
+
+Noconsecutive %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+#1801	12386	
+```
+
+
+```{r  }
+FinalData <- Noconsecutive %>%
+  filter(HerdIntensity>quantile(HerdIntensity,0.01,na.rm = T),
+         HerdIntensity<quantile(HerdIntensity,0.99,na.rm = T),
+         ExpansionRatePerYear>quantile(ExpansionRatePerYear,0.01,na.rm = T),
+         ExpansionRatePerYear<quantile(ExpansionRatePerYear,0.99,na.rm = T),
+         Equity>quantile(Equity,0.01,na.rm = T)|is.na(Equity),
+         M305>quantile(M305,0.01,na.rm = T),
+         IncomeOverFeedCostPerCow>quantile(IncomeOverFeedCostPerCow,0.01,na.rm = T),
+         IncomeOverFeedCostPerCow<quantile(IncomeOverFeedCostPerCow,0.99,na.rm = T),
+         IncomeOverFeedCostPer100Kg>quantile(IncomeOverFeedCostPer100Kg,0.01,na.rm = T),
+         IncomeOverFeedCostPer100Kg<quantile(IncomeOverFeedCostPer100Kg,0.99,na.rm = T),
+         RelativeMilkPrice<quantile(RelativeMilkPrice,0.99,na.rm = T),
+         AverageSCCPerYear<quantile(AverageSCCPerYear,0.99,na.rm = T)|is.na(AverageSCCPerYear),
+         CalvingInterval<quantile(CalvingInterval,0.99,na.rm = T)|is.na(CalvingInterval),
+         CalvingInterval>quantile(CalvingInterval,0.01,na.rm = T)|is.na(CalvingInterval),
+         !is.na(NextyearInCRV),
+         MedianPersistence1<quantile(MedianPersistence1,0.99,na.rm = T),
+         MedianPersistence2<quantile(MedianPersistence2,0.99,na.rm = T)|is.na(MedianPersistence2),
+         AverageAgeInDaysOfLivingCows<quantile(AverageAgeInDaysOfLivingCows,0.99,na.rm = T)|
+         is.na(AverageAgeInDaysOfLivingCows),
+         AverageAgeInDaysOfLivingCows>0|is.na(AverageAgeInDaysOfLivingCows))
+
+FinalData %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+
+# 1713	10721
+
+FinalData <- FinalData%>%
+  select(UBN,FiscalYear,Successor,Robot,OutsourcingYoungStockRearing,SoilType,IncomeOverFeedCostPerCow,IncomeOverFeedCostPer100Kg,M305,matches("(MedianPersistence|MedianMagnitude|MedianTimeToPeak)"),FlynthNumberOfMilkingCow,HerdIntensity,Equity,RelativeMilkPrice,AverageSCCPerYear,AverageAgeInDaysOfLivingCows,CalvingInterval,ExpansionRatePerYear)
+
+summary(FinalData)
+
+
+FinalData <- na.omit(FinalData)
+FinalData %>% 
+  summarise(herd=n_distinct(UBN),record=n())
+colnames(FinalData)
+
+# 1664	10499	
+
+save(FinalData,file="FinalData.rda")
+```

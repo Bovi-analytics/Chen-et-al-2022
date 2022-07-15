@@ -1,0 +1,287 @@
+
+```{r packages}
+library('data.table')
+library('dplyr')
+library(ggplot2)
+library(psych) #describe的来源
+library(lme4)
+library(usethis)
+library(lmerTest)
+library(nlme)
+library(MuMIn)
+library(car)
+library(sjPlot) 
+library(lavaan)
+library(lmtest)
+library(effects)
+#install.packages('jtools')
+library(jtools)
+rm(list = ls())
+```
+
+# data import
+```{r}
+load("FinalData.rda")
+```
+
+```{r decriptive}
+FinalData  %>% 
+  summarise(herd=n_distinct(UBN),record=n())  #1664	10499	
+
+FinalData %>%
+  group_by(FiscalYear) %>%
+  summarise(mean(IncomeOverFeedCostPerCow))
+
+
+FinalData %>%
+  group_by(FiscalYear) %>%
+  summarise_each(funs(mean(.), sd(.), NROW(.)), matches('Median'))
+
+FinalData %>%
+  summarise_each(funs(mean(.), sd(.), NROW(.)), matches('Median'))
+
+FinalData %>%
+  group_by(FiscalYear) %>%
+  summarise(mean(IncomeOverFeedCostPer100Kg))
+
+sd(FinalData$IncomeOverFeedCostPer100Kg)
+
+FinalData %>%
+  mutate(IncomeOverFeedCostPerCowPerDay=IncomeOverFeedCostPerCow/365)%>%
+  summarise(mean(IncomeOverFeedCostPerCowPerDay),
+            mean(IncomeOverFeedCostPerCow),
+            sd(IncomeOverFeedCostPerCowPerDay),
+            sd(IncomeOverFeedCostPerCow))
+
+FinalData %>% group_by(FiscalYear)%>%
+  summarise(mean(IncomeOverFeedCostPerCow),
+            sd(IncomeOverFeedCostPerCow),
+            length(IncomeOverFeedCostPerCow))
+
+
+FinalData %>% group_by(FiscalYear)%>%
+  summarise(mean(IncomeOverFeedCostPer100Kg),
+            sd(IncomeOverFeedCostPer100Kg),
+            length(IncomeOverFeedCostPer100Kg))
+```
+
+```{r decriptive}
+library(tidyr)
+options(scipen=2)
+FinalData %>%
+  select(M305,CalvingInterval,Equity,HerdIntensity,RelativeMilkPrice,IncomeOverFeedCostPerCow,IncomeOverFeedCostPer100Kg,FlynthNumberOfMilkingCow,ExpansionRatePerYear,AverageAgeInDaysOfLivingCows,AverageSCCPerYear,MedianMagnitude1,MedianTimeToPeak1,MedianPersistence1,MedianMagnitude2,MedianTimeToPeak2,MedianPersistence2)%>%
+  pivot_longer(cols = everything()) %>% 
+    group_by(name) %>%
+    summarise(across(value, list(mean= ~ mean(., na.rm = TRUE), 
+         sd = ~ sd(., na.rm = TRUE), 
+         quantile = ~ list(as_tibble(as.list(quantile(., 
+                   probs = c(0.05,0.95)))))))) %>% 
+unnest(c(value_quantile))
+```
+
+```{r correlation}
+
+library(corrplot)
+cor<-cor(FinalData[c(7:23)] ,use = "pairwise.complete.obs")
+corp <- cor.mtest(FinalData[c(7:23)], conf.level = 0.95)
+p.mat = corp$p
+
+corrplot(cor, order = "FPC", method = "color",
+tl.col="black",tl.cex = 0.6,cl.pos = "r",cl.ratio = 0.2,
+sig.level = .05,insig = "blank",addgrid.col="white")
+summary(FinalData)
+```
+
+```{r characterize catergory variables}
+cols <- c('UBN','FiscalYear', 'Successor', 'Robot')
+FinalData[cols] <- lapply(FinalData[cols], as.character)
+colnames(FinalData)
+```
+
+```{r standardization all indepent variables and remove na}
+colnames(FinalData)
+FinalData[c(9:23)] <- scale(FinalData[c(9:23)])
+summary(FinalData)
+data <- na.omit(FinalData)
+plot(data$ExpansionRatePerYear,data$IncomeOverFeedCostPerCow)
+```
+
+# IOFC per cow
+
+```{r random effect}
+lmWithRandom <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + SoilType + Robot + AverageSCCPerYear + Equity + OutsourcingYoungStockRearing  + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear  +  AverageAgeInDaysOfLivingCows + (1|UBN), data=data, REML=F)
+
+lmWithoutRandom <-lm(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + SoilType + Robot + AverageSCCPerYear + Equity + OutsourcingYoungStockRearing  + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear  +  AverageAgeInDaysOfLivingCows , data=data)
+anova(lmWithRandom,lmWithoutRandom)
+# decision: add random effect
+```
+
+
+```{r repeated statement}
+lmWithoutRepeatedStatement <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + SoilType + Robot + AverageSCCPerYear + Equity + OutsourcingYoungStockRearing  + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear  +  AverageAgeInDaysOfLivingCows + (1|UBN), data=data, REML=F)
+
+lmWithRepeatedStatement <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + SoilType + Robot + AverageSCCPerYear + Equity + OutsourcingYoungStockRearing  + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear  +  AverageAgeInDaysOfLivingCows + (1  + as.numeric(FiscalYear)|UBN), data=data, REML=F)
+
+anova(lmWithoutRepeatedStatement,lmWithRepeatedStatement)
+# decision: no repeated statement
+```
+
+
+
+
+#1. basic model 
+
+```{r backward selection}
+BasisModelIOFCPerCow <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + SoilType + Robot + AverageSCCPerYear + Equity + OutsourcingYoungStockRearing  + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear  +  AverageAgeInDaysOfLivingCows + (1|UBN), data=data, REML=F)
+
+vif(BasisModelIOFCPerCow ) #1.00~1.44
+summary(BasisModelIOFCPerCow )
+
+step(BasisModelIOFCPerCow )
+drop1(BasisModelIOFCPerCow , test="Chisq")
+
+BasisModelIOFCPerCowBack<-update(BasisModelIOFCPerCow, .~.-AverageAgeInDaysOfLivingCows-Equity-SoilType-OutsourcingYoungStockRearing,data=data) 
+drop1(BasisModelIOFCPerCowBack, test="Chisq")
+
+summary(BasisModelIOFCPerCowBack)
+# delete -AverageAgeInDaysOfLivingCows-Equity-SoilType-OutsourcingYoungStockRearing
+```
+
+#2. basic model + HLCC
+
+```{r backward selection}
+IOFCPerCowHLCC <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow  + Robot + AverageSCCPerYear + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear + (1|UBN) + MedianMagnitude1 + MedianTimeToPeak1 +MedianPersistence1 + MedianMagnitude2 + MedianTimeToPeak2+MedianPersistence2, data=data, REML=F)
+vif(IOFCPerCowHLCC) #1.00-1.45
+drop1(IOFCPerCowHLCC, test="Chisq")
+IOFCPerCowHLCCBack<-update(IOFCPerCowHLCC , .~.-Successor-Robot-ExpansionRatePerYear,data=data) 
+drop1(IOFCPerCowHLCCBack, test="Chisq")
+
+summary(IOFCPerCowHLCCBack)
+r.squaredGLMM(IOFCPerCowHLCCBack)
+qqnorm(residuals(IOFCPerCowHLCCBack))
+anova(BasisModelIOFCPerCowBack,IOFCPerCowHLCCBack)
+
+# delete -Successor-Robot
+```
+
+```{r}
+IOFCPerCowHLCCBack2<-update(IOFCPerCowHLCC , .~.-Successor-Robot-ExpansionRatePerYear,data=data) 
+summary(IOFCPerCowHLCCBack2)
+r.squaredGLMM(IOFCPerCowHLCCBack2)
+anova(IOFCPerCowHLCCBack,IOFCPerCowHLCCBack2)
+```
+
+
+
+```{r partR2}
+## PartR2 for individual predictor
+#install.packages('partR2')
+library(partR2)
+partR2(IOFCPerCowHLCCBack,
+       partvars = c('MedianMagnitude1','MedianTimeToPeak1','MedianPersistence1'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowHLCCBack,
+       partvars = c('MedianMagnitude2','MedianTimeToPeak2','MedianPersistence2'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowHLCCBack,
+       partvars = c('FiscalYear'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowHLCCBack,
+       partvars = c('RelativeMilkPrice'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowHLCCBack,
+       partvars = c('AverageSCCPerYear '),
+       data=data,
+       R2_type = "marginal")
+```
+
+#2. basic model + M305 
+
+```{r backward selection }
+options(scipen=2)
+IOFCPerCowM305<-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow  + Robot + AverageSCCPerYear + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear + (1|UBN) + M305, data=data, REML=F)
+vif(IOFCPerCowM305) #1.00-1.4
+drop1(IOFCPerCowM305, test="Chisq")
+IOFCPerCowM305Back<-update(IOFCPerCowM305, .~.-Successor,data=data) 
+drop1(IOFCPerCowM305Back, test="Chisq")
+
+summary(IOFCPerCowM305Back)
+r.squaredGLMM(IOFCPerCowM305Back)
+qqnorm(residuals(IOFCPerCowM305Back))
+
+# delete -Successor
+```
+
+
+```{r partR2}
+partR2(IOFCPerCowM305Back,
+       partvars = c('M305'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowM305Back,
+       partvars = c('FiscalYear'),
+       data=data,
+       R2_type = "marginal")
+partR2(IOFCPerCowM305Back,
+       partvars = c('RelativeMilkPrice'),
+       data=data,
+       R2_type = "marginal")
+```
+
+
+
+```{r}
+IOFCPerCowM305Back2<-update(IOFCPerCowM305, .~.-Successor-Robot-ExpansionRatePerYear,data=data) 
+anova(IOFCPerCowM305Back,IOFCPerCowM305Back2)
+```
+
+
+#3. compare two non-nested models
+
+only lme model works with cox test and J test. So we build the models with lme. The models are the same with above models.
+
+```{r Cox test}
+model_lmeHLCC<-lme(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+FlynthNumberOfMilkingCow + Robot + AverageSCCPerYear   + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear + MedianMagnitude1 +MedianTimeToPeak1+MedianPersistence1+MedianMagnitude2 +MedianTimeToPeak2+MedianPersistence2, data=data, random =~1|UBN, control = lmeControl(opt='optim') ,method = 'ML')
+
+vif(model_lme) #1.00-1.45
+drop1(model_lme, test="Chisq")
+model_lmeBack<-update(model_lme, .~.-Successor-Robot,data=data) 
+drop1(model_lmeBack, test="Chisq")
+
+summary(model_lmeBack)
+
+model_lmeM305<-lme(IncomeOverFeedCostPerCow ~ FiscalYear + Successor+ FlynthNumberOfMilkingCow + Robot + AverageSCCPerYear   + HerdIntensity + CalvingInterval + RelativeMilkPrice + ExpansionRatePerYear + M305, data=data, random =~1|UBN, control = lmeControl(opt='optim') ,method = 'ML')
+drop1(model_lmeM305, test="Chisq")
+model_lmeM305Back<-update(model_lmeM305, .~.-Successor,data=data) 
+summary(model_lmeM305Back)
+
+coxtest(model_lmeBack,model_lmeM305Back, data = data)
+jtest(model_lmeBack,model_lmeM305Back, data = data)
+
+```
+
+
+
+# interaction (not found any representative yet)
+
+```{r nteraction}
+lminteraction1 <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + FlynthNumberOfMilkingCow + Robot + AverageSCCPerYear + Equity + HerdIntensity + CalvingInterval + RelativeMilkPrice + (1|UBN)+ MedianMagnitude1 +MedianTimeToPeak1+MedianPersistence1+MedianMagnitude2 +MedianTimeToPeak2+MedianPersistence2+MedianMagnitude2*CalvingInterval, data=data, REML=F)
+
+lminteraction2 <-lmer(IncomeOverFeedCostPerCow ~ FiscalYear + FlynthNumberOfMilkingCow  + Robot + AverageSCCPerYear + Equity + HerdIntensity + CalvingInterval + RelativeMilkPrice + (1|UBN)+ MedianMagnitude1 +MedianTimeToPeak1+MedianPersistence1+MedianMagnitude2 +MedianTimeToPeak2+MedianPersistence2 +MedianMagnitude2*CalvingInterval, data=data, REML=F)
+
+anova(lminteraction1,back2)
+summary(lminteraction1)
+plot_model(lminteraction1,type = "pred",terms = c("MedianMagnitude1","CalvingInterval"))
+plot_model(lminteraction1,type = "int")
+plot_model(lminteraction1,type = "int", mdrt.values ='meansd')
+
+anova(lminteraction2,back2)
+summary(lminteraction2)
+plot_model(lminteraction2,type = "pred",terms = c("MedianPersistence2","HerdIntensity"))
+plot_model(lminteraction2,type = "int")
+plot_model(lminteraction2,type = "int", mdrt.values ='meansd')
+```
