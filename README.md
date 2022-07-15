@@ -1,5 +1,6 @@
 # Chen-et-al-2022b
-Herd economics and herd lactation curve characteristics
+
+Herd level economic comparison between the shape of the lactation curve and 305d milk production
 
 [![DOI](https://zenodo.org/badge/449431728.svg)](https://zenodo.org/badge/latestdoi/449431728)
 
